@@ -113,6 +113,7 @@
 #include "scene/resources/bone_map.h"
 #include "scene/resources/camera_attributes.h"
 #include "scene/resources/camera_texture.h"
+#include "scene/resources/color_palette.h"
 #include "scene/resources/compositor.h"
 #include "scene/resources/compressed_texture.h"
 #include "scene/resources/curve_texture.h"
@@ -890,6 +891,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(ProceduralSkyMaterial);
 	GDREGISTER_CLASS(PanoramaSkyMaterial);
 	GDREGISTER_CLASS(PhysicalSkyMaterial);
+	SceneTree::add_idle_callback(BaseMaterial3D::flush_changes);
 	BaseMaterial3D::init_shaders();
 
 	GDREGISTER_CLASS(MeshLibrary);
@@ -968,6 +970,7 @@ void register_scene_types() {
 	GDREGISTER_CLASS(FontFile);
 	GDREGISTER_CLASS(FontVariation);
 	GDREGISTER_CLASS(SystemFont);
+	GDREGISTER_CLASS(ColorPalette);
 
 	GDREGISTER_CLASS(Curve);
 

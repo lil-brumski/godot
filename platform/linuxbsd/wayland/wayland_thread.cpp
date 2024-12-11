@@ -32,8 +32,12 @@
 
 #ifdef WAYLAND_ENABLED
 
-// FIXME: Does this cause issues with *BSDs?
+#ifdef __FreeBSD__
+#include <dev/evdev/input-event-codes.h>
+#else
+// Assume Linux.
 #include <linux/input-event-codes.h>
+#endif
 
 // For the actual polling thread.
 #include <poll.h>
@@ -193,10 +197,7 @@ bool WaylandThread::_seat_state_configure_key_event(SeatState &p_ss, Ref<InputEv
 	Key keycode = KeyMappingXKB::get_keycode(xkb_state_key_get_one_sym(p_ss.xkb_state, p_keycode));
 	Key physical_keycode = KeyMappingXKB::get_scancode(p_keycode);
 	KeyLocation key_location = KeyMappingXKB::get_location(p_keycode);
-
-	if (physical_keycode == Key::NONE) {
-		return false;
-	}
+	uint32_t unicode = xkb_state_key_get_utf32(p_ss.xkb_state, p_keycode);
 
 	if (keycode == Key::NONE) {
 		keycode = physical_keycode;
@@ -204,6 +205,10 @@ bool WaylandThread::_seat_state_configure_key_event(SeatState &p_ss, Ref<InputEv
 
 	if (keycode >= Key::A + 32 && keycode <= Key::Z + 32) {
 		keycode -= 'a' - 'A';
+	}
+
+	if (physical_keycode == Key::NONE && keycode == Key::NONE && unicode == 0) {
+		return false;
 	}
 
 	p_event->set_window_id(DisplayServer::MAIN_WINDOW_ID);
@@ -218,8 +223,6 @@ bool WaylandThread::_seat_state_configure_key_event(SeatState &p_ss, Ref<InputEv
 	p_event->set_keycode(keycode);
 	p_event->set_physical_keycode(physical_keycode);
 	p_event->set_location(key_location);
-
-	uint32_t unicode = xkb_state_key_get_utf32(p_ss.xkb_state, p_keycode);
 
 	if (unicode != 0) {
 		p_event->set_key_label(fix_key_label(unicode, keycode));
@@ -497,6 +500,12 @@ void WaylandThread::_wl_registry_on_global(void *data, struct wl_registry *wl_re
 		return;
 	}
 
+	if (strcmp(interface, xdg_system_bell_v1_interface.name) == 0) {
+		registry->xdg_system_bell = (struct xdg_system_bell_v1 *)wl_registry_bind(wl_registry, name, &xdg_system_bell_v1_interface, 1);
+		registry->xdg_system_bell_name = name;
+		return;
+	}
+
 	if (strcmp(interface, xdg_activation_v1_interface.name) == 0) {
 		registry->xdg_activation = (struct xdg_activation_v1 *)wl_registry_bind(wl_registry, name, &xdg_activation_v1_interface, 1);
 		registry->xdg_activation_name = name;
@@ -688,6 +697,17 @@ void WaylandThread::_wl_registry_on_global_remove(void *data, struct wl_registry
 		}
 
 		registry->xdg_decoration_manager_name = 0;
+
+		return;
+	}
+
+	if (name == registry->xdg_system_bell_name) {
+		if (registry->xdg_system_bell) {
+			xdg_system_bell_v1_destroy(registry->xdg_system_bell);
+			registry->xdg_system_bell = nullptr;
+		}
+
+		registry->xdg_system_bell_name = 0;
 
 		return;
 	}
@@ -3282,6 +3302,12 @@ struct wl_surface *WaylandThread::window_get_wl_surface(DisplayServer::WindowID 
 	return ws.wl_surface;
 }
 
+void WaylandThread::beep() const {
+	if (registry.xdg_system_bell) {
+		xdg_system_bell_v1_ring(registry.xdg_system_bell, nullptr);
+	}
+}
+
 void WaylandThread::window_set_max_size(DisplayServer::WindowID p_window_id, const Size2i &p_size) {
 	// TODO: Use window IDs for multiwindow support.
 	WindowState &ws = main_window;
@@ -4362,6 +4388,10 @@ void WaylandThread::destroy() {
 
 	if (registry.xdg_activation) {
 		xdg_activation_v1_destroy(registry.xdg_activation);
+	}
+
+	if (registry.xdg_system_bell) {
+		xdg_system_bell_v1_destroy(registry.xdg_system_bell);
 	}
 
 	if (registry.xdg_decoration_manager) {

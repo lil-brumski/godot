@@ -328,10 +328,15 @@ void EditorExportPlatformIOS::get_export_options(List<ExportOption> *r_options) 
 	plugins_changed.clear();
 	plugins = found_plugins;
 
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "entitlements/increased_memory_limit"), false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "entitlements/game_center"), false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "entitlements/push_notifications", PROPERTY_HINT_ENUM, "Disabled,Production,Development"), "Disabled"));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::STRING, "entitlements/additional", PROPERTY_HINT_MULTILINE_TEXT), ""));
+
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/access_wifi"), false));
-	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/push_notifications"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/performance_gaming_tier"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "capabilities/performance_a12"), false));
+	r_options->push_back(ExportOption(PropertyInfo(Variant::PACKED_STRING_ARRAY, "capabilities/additional"), PackedStringArray()));
 
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "user_data/accessible_from_files_app"), false));
 	r_options->push_back(ExportOption(PropertyInfo(Variant::BOOL, "user_data/accessible_from_itunes_sharing"), false));
@@ -518,9 +523,20 @@ void EditorExportPlatformIOS::_fix_config_file(const Ref<EditorExportPreset> &p_
 			strnew += lines[i].replace("$docs_in_place", ((bool)p_preset->get("user_data/accessible_from_files_app")) ? "<true/>" : "<false/>") + "\n";
 		} else if (lines[i].contains("$docs_sharing")) {
 			strnew += lines[i].replace("$docs_sharing", ((bool)p_preset->get("user_data/accessible_from_itunes_sharing")) ? "<true/>" : "<false/>") + "\n";
-		} else if (lines[i].contains("$entitlements_push_notifications")) {
-			bool is_on = p_preset->get("capabilities/push_notifications");
-			strnew += lines[i].replace("$entitlements_push_notifications", is_on ? "<key>aps-environment</key><string>development</string>" : "") + "\n";
+		} else if (lines[i].contains("$entitlements_full")) {
+			String entitlements;
+			if ((String)p_preset->get("entitlements/push_notifications") != "Disabled") {
+				entitlements += "<key>aps-environment</key>\n<string>" + p_preset->get("entitlements/push_notifications").operator String().to_lower() + "</string>" + "\n";
+			}
+			if ((bool)p_preset->get("entitlements/game_center")) {
+				entitlements += "<key>com.apple.developer.game-center</key>\n<true/>\n";
+			}
+			if ((bool)p_preset->get("entitlements/increased_memory_limit")) {
+				entitlements += "<key>com.apple.developer.kernel.increased-memory-limit</key>\n<true/>\n";
+			}
+			entitlements += p_preset->get("entitlements/additional").operator String() + "\n";
+
+			strnew += lines[i].replace("$entitlements_full", entitlements);
 		} else if (lines[i].contains("$required_device_capabilities")) {
 			String capabilities;
 
@@ -540,6 +556,9 @@ void EditorExportPlatformIOS::_fix_config_file(const Ref<EditorExportPreset> &p_
 			}
 			for (int idx = 0; idx < capabilities_list.size(); idx++) {
 				capabilities += "<string>" + capabilities_list[idx] + "</string>\n";
+			}
+			for (const String &cap : p_preset->get("capabilities/additional").operator PackedStringArray()) {
+				capabilities += "<string>" + cap + "</string>\n";
 			}
 
 			strnew += lines[i].replace("$required_device_capabilities", capabilities);
@@ -2414,7 +2433,7 @@ Error EditorExportPlatformIOS::_export_project_helper(const Ref<EditorExportPres
 	if (p_preset->get("application/generate_simulator_library_if_missing").operator bool()) {
 		String sim_lib_path = dest_dir + String(binary_name + ".xcframework").path_join("ios-arm64_x86_64-simulator").path_join("libgodot.a");
 		String dev_lib_path = dest_dir + String(binary_name + ".xcframework").path_join("ios-arm64").path_join("libgodot.a");
-		String tmp_lib_path = EditorPaths::get_singleton()->get_cache_dir().path_join(binary_name + "_lipo_");
+		String tmp_lib_path = EditorPaths::get_singleton()->get_temp_dir().path_join(binary_name + "_lipo_");
 		uint32_t cputype = 0;
 		uint32_t cpusubtype = 0;
 		if (!_archive_has_arm64(sim_lib_path, &cputype, &cpusubtype) && _archive_has_arm64(dev_lib_path) && FileAccess::exists(dev_lib_path)) {
@@ -3092,19 +3111,19 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 	String id = "tmpexport." + uitos(OS::get_singleton()->get_unix_time());
 
 	Ref<DirAccess> filesystem_da = DirAccess::create(DirAccess::ACCESS_FILESYSTEM);
-	ERR_FAIL_COND_V_MSG(filesystem_da.is_null(), ERR_CANT_CREATE, "Cannot create DirAccess for path '" + EditorPaths::get_singleton()->get_cache_dir() + "'.");
-	filesystem_da->make_dir_recursive(EditorPaths::get_singleton()->get_cache_dir().path_join(id));
-	String tmp_export_path = EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.ipa");
+	ERR_FAIL_COND_V_MSG(filesystem_da.is_null(), ERR_CANT_CREATE, "Cannot create DirAccess for path '" + EditorPaths::get_singleton()->get_temp_dir() + "'.");
+	filesystem_da->make_dir_recursive(EditorPaths::get_singleton()->get_temp_dir().path_join(id));
+	String tmp_export_path = EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.ipa");
 
-#define CLEANUP_AND_RETURN(m_err)                                                                           \
-	{                                                                                                       \
-		if (filesystem_da->change_dir(EditorPaths::get_singleton()->get_cache_dir().path_join(id)) == OK) { \
-			filesystem_da->erase_contents_recursive();                                                      \
-			filesystem_da->change_dir("..");                                                                \
-			filesystem_da->remove(id);                                                                      \
-		}                                                                                                   \
-		return m_err;                                                                                       \
-	}                                                                                                       \
+#define CLEANUP_AND_RETURN(m_err)                                                                          \
+	{                                                                                                      \
+		if (filesystem_da->change_dir(EditorPaths::get_singleton()->get_temp_dir().path_join(id)) == OK) { \
+			filesystem_da->erase_contents_recursive();                                                     \
+			filesystem_da->change_dir("..");                                                               \
+			filesystem_da->remove(id);                                                                     \
+		}                                                                                                  \
+		return m_err;                                                                                      \
+	}                                                                                                      \
 	((void)0)
 
 	Device dev = devices[p_device];
@@ -3174,7 +3193,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 			args.push_back("simctl");
 			args.push_back("install");
 			args.push_back(dev.id);
-			args.push_back(EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
+			args.push_back(EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
 
 			String log;
 			int ec;
@@ -3227,7 +3246,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 			args.push_back(dev.id);
 			args.push_back("--justlaunch");
 			args.push_back("--bundle");
-			args.push_back(EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
+			args.push_back(EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
 			String app_args;
 			for (const String &E : cmd_args_list) {
 				app_args += E + " ";
@@ -3266,7 +3285,7 @@ Error EditorExportPlatformIOS::run(const Ref<EditorExportPreset> &p_preset, int 
 			args.push_back("app");
 			args.push_back("-d");
 			args.push_back(dev.id);
-			args.push_back(EditorPaths::get_singleton()->get_cache_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
+			args.push_back(EditorPaths::get_singleton()->get_temp_dir().path_join(id).path_join("export.xcarchive/Products/Applications/export.app"));
 
 			String log;
 			int ec;

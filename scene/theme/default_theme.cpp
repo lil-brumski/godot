@@ -365,7 +365,7 @@ void fill_default_theme(Ref<Theme> &theme, const Ref<Font> &default_font, const 
 
 	// Button variations
 
-	theme->set_type_variation("FlatButton", "Button");
+	theme->set_type_variation(SceneStringName(FlatButton), "Button");
 	theme->set_type_variation("FlatMenuButton", "MenuButton");
 
 	Ref<StyleBoxEmpty> flat_button_normal = make_empty_stylebox();
@@ -375,10 +375,10 @@ void fill_default_theme(Ref<Theme> &theme, const Ref<Font> &default_font, const 
 	Ref<StyleBoxFlat> flat_button_pressed = button_pressed->duplicate();
 	flat_button_pressed->set_bg_color(style_pressed_color * Color(1, 1, 1, 0.85));
 
-	theme->set_stylebox(CoreStringName(normal), "FlatButton", flat_button_normal);
-	theme->set_stylebox("hover", "FlatButton", flat_button_normal);
-	theme->set_stylebox(SceneStringName(pressed), "FlatButton", flat_button_pressed);
-	theme->set_stylebox("disabled", "FlatButton", flat_button_normal);
+	theme->set_stylebox(CoreStringName(normal), SceneStringName(FlatButton), flat_button_normal);
+	theme->set_stylebox("hover", SceneStringName(FlatButton), flat_button_normal);
+	theme->set_stylebox(SceneStringName(pressed), SceneStringName(FlatButton), flat_button_pressed);
+	theme->set_stylebox("disabled", SceneStringName(FlatButton), flat_button_normal);
 
 	theme->set_stylebox(CoreStringName(normal), "FlatMenuButton", flat_button_normal);
 	theme->set_stylebox("hover", "FlatMenuButton", flat_button_normal);
@@ -693,6 +693,9 @@ void fill_default_theme(Ref<Theme> &theme, const Ref<Font> &default_font, const 
 
 	// File Dialog
 
+	theme->set_icon("load", "FileDialog", icons["load"]);
+	theme->set_icon("save", "FileDialog", icons["save"]);
+	theme->set_icon("clear", "FileDialog", icons["clear"]);
 	theme->set_icon("parent_folder", "FileDialog", icons["folder_up"]);
 	theme->set_icon("back_folder", "FileDialog", icons["arrow_left"]);
 	theme->set_icon("forward_folder", "FileDialog", icons["arrow_right"]);
@@ -1034,6 +1037,7 @@ void fill_default_theme(Ref<Theme> &theme, const Ref<Font> &default_font, const 
 	theme->set_constant("label_width", "ColorPicker", Math::round(10 * scale));
 	theme->set_constant("center_slider_grabbers", "ColorPicker", 1);
 
+	theme->set_icon("menu_option", "ColorPicker", icons["tabs_menu_hl"]);
 	theme->set_icon("folded_arrow", "ColorPicker", icons["arrow_right"]);
 	theme->set_icon("expanded_arrow", "ColorPicker", icons["arrow_down"]);
 	theme->set_icon("screen_picker", "ColorPicker", icons["color_picker_pipette"]);
