@@ -42,6 +42,7 @@
 #include "editor/themes/editor_scale.h"
 #include "scene/gui/center_container.h"
 #include "scene/gui/check_box.h"
+#include "scene/gui/flow_container.h"
 #include "scene/gui/grid_container.h"
 #include "scene/gui/label.h"
 #include "scene/gui/option_button.h"
@@ -409,7 +410,14 @@ void EditorFileDialog::update_dir() {
 }
 
 void EditorFileDialog::_dir_submitted(const String &p_dir) {
-	dir_access->change_dir(p_dir);
+	String new_dir = p_dir;
+#ifdef WINDOWS_ENABLED
+	if (drives->is_visible() && !new_dir.is_network_share_path() && new_dir.is_absolute_path() && new_dir.find(":/") == -1 && new_dir.find(":\\") == -1) {
+		// Non network path without X:/ prefix on Windows, add drive letter.
+		new_dir = drives->get_item_text(drives->get_selected()).path_join(new_dir);
+	}
+#endif
+	dir_access->change_dir(new_dir);
 	invalidate();
 	update_dir();
 	_push_history();
@@ -1503,9 +1511,11 @@ void EditorFileDialog::_filter_changed(const String &p_text) {
 	search_string = p_text;
 	invalidate();
 
-	item_list->deselect_all();
-	if (item_list->get_item_count() > 0) {
-		item_list->call_deferred("select", 0);
+	if (item_list->get_selected_items().size() > 0) {
+		item_list->deselect_all();
+		if (item_list->get_item_count() > 0) {
+			item_list->call_deferred("select", 0);
+		}
 	}
 }
 
@@ -1951,30 +1961,38 @@ void EditorFileDialog::_update_option_controls() {
 	}
 	options_dirty = false;
 
-	while (grid_options->get_child_count() > 0) {
-		Node *child = grid_options->get_child(0);
-		grid_options->remove_child(child);
+	while (flow_checkbox_options->get_child_count() > 0) {
+		Node *child = flow_checkbox_options->get_child(0);
+		flow_checkbox_options->remove_child(child);
 		child->queue_free();
 	}
+	while (grid_select_options->get_child_count() > 0) {
+		Node *child = grid_select_options->get_child(0);
+		grid_select_options->remove_child(child);
+		child->queue_free();
+	}
+
 	selected_options.clear();
 
 	for (const EditorFileDialog::Option &opt : options) {
-		Label *lbl = memnew(Label);
-		lbl->set_text(opt.name);
-		grid_options->add_child(lbl);
 		if (opt.values.is_empty()) {
 			CheckBox *cb = memnew(CheckBox);
 			cb->set_pressed(opt.default_idx);
-			grid_options->add_child(cb);
+			cb->set_text(opt.name);
+			flow_checkbox_options->add_child(cb);
 			cb->connect(SceneStringName(toggled), callable_mp(this, &EditorFileDialog::_option_changed_checkbox_toggled).bind(opt.name));
 			selected_options[opt.name] = (bool)opt.default_idx;
 		} else {
+			Label *lbl = memnew(Label);
+			lbl->set_text(opt.name);
+			grid_select_options->add_child(lbl);
+
 			OptionButton *ob = memnew(OptionButton);
 			for (const String &val : opt.values) {
 				ob->add_item(val);
 			}
 			ob->select(opt.default_idx);
-			grid_options->add_child(ob);
+			grid_select_options->add_child(ob);
 			ob->connect(SceneStringName(item_selected), callable_mp(this, &EditorFileDialog::_option_changed_item_selected).bind(opt.name));
 			selected_options[opt.name] = opt.default_idx;
 		}
@@ -2266,11 +2284,13 @@ void EditorFileDialog::add_side_menu(Control *p_menu, const String &p_title) {
 void EditorFileDialog::_update_side_menu_visibility(bool p_native_dlg) {
 	if (p_native_dlg) {
 		pathhb->set_visible(false);
-		grid_options->set_visible(false);
+		flow_checkbox_options->set_visible(false);
+		grid_select_options->set_visible(false);
 		list_hb->set_visible(false);
 	} else {
 		pathhb->set_visible(true);
-		grid_options->set_visible(true);
+		flow_checkbox_options->set_visible(true);
+		grid_select_options->set_visible(true);
 		list_hb->set_visible(true);
 	}
 }
@@ -2284,22 +2304,22 @@ EditorFileDialog::EditorFileDialog() {
 
 	set_title(TTR("Save a File"));
 
-	ED_SHORTCUT("file_dialog/go_back", TTR("Go Back"), KeyModifierMask::ALT | Key::LEFT);
-	ED_SHORTCUT("file_dialog/go_forward", TTR("Go Forward"), KeyModifierMask::ALT | Key::RIGHT);
-	ED_SHORTCUT("file_dialog/go_up", TTR("Go Up"), KeyModifierMask::ALT | Key::UP);
-	ED_SHORTCUT("file_dialog/refresh", TTR("Refresh"), Key::F5);
-	ED_SHORTCUT("file_dialog/toggle_hidden_files", TTR("Toggle Hidden Files"), KeyModifierMask::CTRL | Key::H);
-	ED_SHORTCUT("file_dialog/toggle_favorite", TTR("Toggle Favorite"), KeyModifierMask::ALT | Key::F);
-	ED_SHORTCUT("file_dialog/toggle_mode", TTR("Toggle Mode"), KeyModifierMask::ALT | Key::V);
-	ED_SHORTCUT("file_dialog/create_folder", TTR("Create Folder"), KeyModifierMask::CMD_OR_CTRL | Key::N);
-	ED_SHORTCUT("file_dialog/delete", TTR("Delete"), Key::KEY_DELETE);
-	ED_SHORTCUT("file_dialog/focus_path", TTR("Focus Path"), KeyModifierMask::CMD_OR_CTRL | Key::L);
+	ED_SHORTCUT("file_dialog/go_back", TTRC("Go Back"), KeyModifierMask::ALT | Key::LEFT);
+	ED_SHORTCUT("file_dialog/go_forward", TTRC("Go Forward"), KeyModifierMask::ALT | Key::RIGHT);
+	ED_SHORTCUT("file_dialog/go_up", TTRC("Go Up"), KeyModifierMask::ALT | Key::UP);
+	ED_SHORTCUT("file_dialog/refresh", TTRC("Refresh"), Key::F5);
+	ED_SHORTCUT("file_dialog/toggle_hidden_files", TTRC("Toggle Hidden Files"), KeyModifierMask::CTRL | Key::H);
+	ED_SHORTCUT("file_dialog/toggle_favorite", TTRC("Toggle Favorite"), KeyModifierMask::ALT | Key::F);
+	ED_SHORTCUT("file_dialog/toggle_mode", TTRC("Toggle Mode"), KeyModifierMask::ALT | Key::V);
+	ED_SHORTCUT("file_dialog/create_folder", TTRC("Create Folder"), KeyModifierMask::CMD_OR_CTRL | Key::N);
+	ED_SHORTCUT("file_dialog/delete", TTRC("Delete"), Key::KEY_DELETE);
+	ED_SHORTCUT("file_dialog/focus_path", TTRC("Focus Path"), KeyModifierMask::CMD_OR_CTRL | Key::L);
 	// Allow both Cmd + L and Cmd + Shift + G to match Safari's and Finder's shortcuts respectively.
 	ED_SHORTCUT_OVERRIDE_ARRAY("file_dialog/focus_path", "macos",
 			{ int32_t(KeyModifierMask::META | Key::L), int32_t(KeyModifierMask::META | KeyModifierMask::SHIFT | Key::G) });
-	ED_SHORTCUT("file_dialog/focus_filter", TTR("Focus Filter"), KeyModifierMask::CMD_OR_CTRL | Key::F);
-	ED_SHORTCUT("file_dialog/move_favorite_up", TTR("Move Favorite Up"), KeyModifierMask::CMD_OR_CTRL | Key::UP);
-	ED_SHORTCUT("file_dialog/move_favorite_down", TTR("Move Favorite Down"), KeyModifierMask::CMD_OR_CTRL | Key::DOWN);
+	ED_SHORTCUT("file_dialog/focus_filter", TTRC("Focus Filter"), KeyModifierMask::CMD_OR_CTRL | Key::F);
+	ED_SHORTCUT("file_dialog/move_favorite_up", TTRC("Move Favorite Up"), KeyModifierMask::CMD_OR_CTRL | Key::UP);
+	ED_SHORTCUT("file_dialog/move_favorite_down", TTRC("Move Favorite Down"), KeyModifierMask::CMD_OR_CTRL | Key::DOWN);
 
 	ED_SHORTCUT_OVERRIDE("file_dialog/toggle_hidden_files", "macos", KeyModifierMask::META | KeyModifierMask::SHIFT | Key::PERIOD);
 	ED_SHORTCUT_OVERRIDE("file_dialog/toggle_favorite", "macos", KeyModifierMask::META | KeyModifierMask::CTRL | Key::F);
@@ -2372,10 +2392,15 @@ EditorFileDialog::EditorFileDialog() {
 	body_hsplit->set_v_size_flags(Control::SIZE_EXPAND_FILL);
 	vbc->add_child(body_hsplit);
 
-	grid_options = memnew(GridContainer);
-	grid_options->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
-	grid_options->set_columns(2);
-	vbc->add_child(grid_options);
+	flow_checkbox_options = memnew(HFlowContainer);
+	flow_checkbox_options->set_h_size_flags(Control::SIZE_EXPAND_FILL);
+	flow_checkbox_options->set_alignment(FlowContainer::ALIGNMENT_CENTER);
+	vbc->add_child(flow_checkbox_options);
+
+	grid_select_options = memnew(GridContainer);
+	grid_select_options->set_h_size_flags(Control::SIZE_SHRINK_CENTER);
+	grid_select_options->set_columns(2);
+	vbc->add_child(grid_select_options);
 
 	list_hb = memnew(HSplitContainer);
 	list_hb->set_h_size_flags(Control::SIZE_EXPAND_FILL);
